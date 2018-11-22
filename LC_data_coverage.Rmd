@@ -1,0 +1,351 @@
+---
+title: "Liveable Cities Power Monitor Data"
+author: "Phil Wu"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+# Outputs from Liveable Cities monitors
+
+Data collected by emon-TX sensor was aggregated into an  hourly interval, meaning a fully connected unit should have 24 readings per day. 
+
+```{r setup, include=FALSE}
+# Defines the global options for knitr
+knitr::opts_chunk$set(echo = FALSE,         # Change to TRUE to show code in results
+                      #out.width="600px",
+                      dpi=120,
+                      warning = FALSE,      # Hide all warning messages
+                      message = FALSE,
+                      fig_caption = TRUE, 
+                      fig.align = 'center',  # full width
+                      tidy = TRUE) # tidy up code in case echo = TRUE
+options(digits=3) 
+
+
+# Set start time ----
+startTime <- Sys.time() 
+
+myPackages <- c("tidyverse", 
+       "lubridate", 
+       "zoo", 
+       "xts", 
+       "chron", 
+       "data.table", 
+       "scales",
+       "DT",
+       "fTrading", 
+       "data.table", 
+       "knitr", 
+       "gridExtra", 
+       "patchwork",
+       "plotly", 
+       "stringr", 
+       "kableExtra", 
+       "maptools" ,
+       "ggmap",
+       "ggplot2",
+       "ggsn",
+       "sf",
+       "fmsb", 
+       "RColorBrewer",
+       #"plyr", # this library clash with dplyr all the time. 
+       "png")
+       #"sp" ,
+       #"rgdal",
+       #"raster", 
+       #"rasterVis" ,
+       #"rgeos")
+       
+
+# devtools::install_github("thomasp85/patchwork")
+#devtools::install_github("tidyverse/ggplot2")
+#library(patchwork)
+
+required_packages <- function(x,y){
+ for( i in x ){
+   if( ! require( i , character.only = TRUE ) ){
+     if( Sys.info()["sysname"] == "Linux" ){
+       install.packages( i , repos=y , type="source" , quiet=TRUE , dependencies = TRUE , verbose = FALSE )
+     } else {
+       install.packages( i , repos=y , quiet=TRUE , dependencies = TRUE , verbose = FALSE )
+     }
+     require( i , character.only = TRUE, quietly = TRUE )
+   }
+ }
+}
+
+required_packages((myPackages),"http://cran.rstudio.com/")
+
+# When find functions under dplyr (e.g. group_by) not working, try detach the packpage of "plyr"
+#detach(package:plyr)
+
+# Housekeeping
+#rm(list=ls(all=TRUE)) # remove all objects from workspace
+
+```
+
+```{r}
+# all raw data is saved in a dirtory 
+datadir <- "../Data//raw_data_20171129/"
+
+fileName <- list.files("../Data//raw_data_20171129/", pattern = "*.txt", full.names =F, recursive = F) 
+
+rm(iFile, e_all)
+
+e_all <- data.frame(
+  ele_id=integer(), 
+  ele_tim=character(), 
+  ele_power=integer(), 
+  ele_date=character(), 
+  ele_datehour=character(), 
+  ele_timdiff=character(), 
+  ele_Wh=numeric()
+)
+
+for(i in 1: length(fileName)){
+  iFile <- paste(datadir, fileName[i], sep = "/")
+  if(length(readLines(iFile)) == 0 ){
+    next
+  }
+    eTemp <- read.table(iFile , header = T, sep = "\t" , stringsAsFactors = F ) %>% 
+      mutate(ID = paste("Unit" , unlist(strsplit(fileName[i], "[.]"))[1], sep="_" ) )
+    #iName <- paste("Unit" , unlist(strsplit(myfiles[i], "[.]"))[1], sep="_" )
+    #eTemp$uid <- iName
+    e_all <- rbind(e_all, eTemp)
+    rm(eTemp)
+}
+
+```
+
+
+```{r}
+
+lc_E <- e_all %>% 
+  dplyr::select(-ele_id, -ele_datehour, -ele_timdiff) %>% 
+  mutate(DateTime = as.POSIXct(ele_tim) ) 
+
+```
+
+
+```{r}
+allDate <- data.frame(Date = seq.Date(   as.Date(min(lc_E$ele_date)),  as.Date(max(lc_E$ele_date)) , by="1 day") )
+
+lcDate <- lc_E %>% 
+  filter(!grepl("_CN", ID)) %>% 
+  #head()
+  mutate(Date = as.Date(ele_date)) %>% 
+  #head()
+  group_by(ID, Date) %>% 
+  summarise(Count = n()) 
+
+```
+
+
+
+```{r, eval=F}
+lcDate%>% 
+  group_by(Date) %>% 
+  summarise(unitCount = sum(Count)) %>% 
+  #head()
+  ggplot()+
+    geom_line(aes(x=Date, y=unitCount)) +
+    theme(
+          axis.line.x = element_line(color="grey", size = 1)) +
+    #scale_y_reverse()+
+    labs(y = "", x="") +
+    scale_x_date(expand = c(0,0)) ->fig_unitLine
+
+
+lcDate%>% 
+  ggplot()+
+    geom_tile(aes(x=Date, y=ID, fill= Count))+
+    scale_fill_gradient(low="red", high="green", na.value = "white")+
+    labs(fill = "Data coverage")+
+    scale_x_date(expand = c(0,0) , 
+                 date_breaks = "2 month", 
+                 date_labels = "%Y \n %b") -> fig_allUnits
+
+
+fig_unitLine + fig_allUnits + plot_layout(ncol = 1, heights = c(1,7))
+
+
+```
+
+The graph below shows the number of readings that each unit received every day from April 2016 to end of Nov 2017. 
+
+```{r, fig.height=15, out.width = "70%", fig.align="center", fig.cap = "Number of readings per day from all units"}
+
+lcDate %>% 
+  ungroup() %>%
+  #head()
+  mutate(ID = substr(ID, 6,8)) %>%
+  ggplot()+
+    geom_tile(aes(x=Date, y=ID, fill= Count))+
+    scale_fill_gradient(low="red", high="green", na.value = "white")+
+    theme_nothing()+
+    labs(fill = "Number of readings \nreceived per day", 
+         x = "")+
+    scale_x_date(expand = c(0,0) , 
+                 date_breaks = "2 month", 
+                 date_labels = "%Y \n %b")+
+    theme(plot.margin = unit(c(0,0,0,0), "cm"), 
+          axis.text.y = element_blank() , 
+          axis.ticks.y = element_blank() ,
+          axis.title.y = element_blank()  )+
+  theme_minimal() -> fig_allUnits
+
+
+ggplotly(fig_allUnits, height = 1500, width = 1000)
+
+```
+
+#Full List 
+
+```{r}
+library(DT)
+
+lcDate %>%
+  group_by(ID) %>%
+  summarise(min = min(Date),
+            max = max(Date)) %>%
+  DT::datatable()
+
+```
+
+
+
+
+```{r, eval=F}
+head(lcDate)
+```
+
+
+
+Find out count of data points of each unit at different days
+
+
+
+```{r, eval=F}
+head(lc_E)
+
+allDate <- seq.Date(   as.Date(min(lc_E$ele_date)),  as.Date(max(lc_E$ele_date)) , by="1 day")
+
+lc_E %>% 
+  dplyr::select(-ele_tim) %>% 
+  mutate(Date = DateTime) %>% 
+  mutate(Date = floor_date(Date, unit = "1day")) %>%  
+  #head()
+  #mutate(Hour = floor_date(DateTime, unit = "1hour")) %>% 
+  #mutate(Diff = DateTime - lag(DateTime)) %>% 
+  #mutate(D = seconds_to_period(Diff)) %>% 
+  group_by(ID) %>% 
+  summarise(Count = n()) %>% 
+  arrange(desc(Count)) %>% 
+  head(1000)
+
+
+```
+
+```{r, eval=F}
+lc_E %>% 
+  dplyr::select(-ele_tim) %>% 
+  mutate(Date = DateTime) %>% 
+  mutate(Date = floor_date(Date, unit = "1day")) %>%  
+  #head()
+  #mutate(Hour = floor_date(DateTime, unit = "1hour")) %>% 
+  #mutate(Diff = DateTime - lag(DateTime)) %>% 
+  #mutate(D = seconds_to_period(Diff)) %>% 
+  group_by(ID, Date) %>% 
+  summarise(Count = n()) -> lce_Date #%>% 
+  #filter(Count == 24) 
+  
+head(lce_Date)
+```
+
+
+```{r, eval=F}
+lce_Date %>% 
+  spread("ID", "Count") -> lce_Date_wide
+
+lce_Date %>% 
+  group_by(ID) %>% 
+  summarise(StartDate = min(Date), EndDate=max(Date), Count = n()) %>% 
+  head()
+
+allDate <- data.frame(Date = seq.POSIXt(min(lce_Date$Date), max(lce_Date$Date), by= "1 day" ))
+
+head(allDate)
+
+lce_all <- allDate %>%
+  #head()
+  #setnames("Date") %>% 
+  full_join(lce_Date_wide, by = "Date") %>% 
+  gather(Unit, Count, -Date) %>% 
+  filter(!grepl("_CN", Unit)) %>% 
+  #mutate(Count = ifelse(is.na(Count), 0, Count)) %>% 
+  mutate(Unit = substr(Unit, 6, 8)) 
+
+summary(lce_all)
+head(lce_all)
+
+lce_all %>%
+  mutate(Date2 = as.Date(Date)) %>% 
+  #head()
+  group_by(Date2, Unit) %>% 
+  mutate(CountDay = n()) %>% 
+  #head()
+  ggplot()+
+    geom_line(aes(x=Date2, y=CountDay))
+    
+```
+
+
+
+
+
+
+```{r, eval=F}
+
+#arrange(DN) %>% 
+  #head(30)
+  ggplot()+
+    geom_tile(aes(x=as.Date(Date), y=Unit, z=Count, fill=Count)) +
+    theme_minimal()+
+    scale_fill_gradient(low="red", high = "green", na.value = "white")+
+    scale_x_date(date_breaks = "2 month", date_labels = "%Y \n %b")+
+    theme(axis.text.y = element_blank()) ->fig_temp
+
+
+
+#ggplotly(fig_temp)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
