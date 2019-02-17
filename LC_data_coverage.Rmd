@@ -168,7 +168,7 @@ lcDate%>%
 
 fig_unitLine + fig_allUnits + plot_layout(ncol = 1, heights = c(1,7))
 
-
+fig_unitLine
 ```
 
 The graph below shows the number of readings that each unit received every day from April 2016 to end of Nov 2017. 
@@ -298,6 +298,66 @@ lce_all %>%
     geom_line(aes(x=Date2, y=CountDay))
     
 ```
+
+```{r}
+
+lc_E %>% 
+  head()
+
+```
+
+
+
+
+
+
+```{r}
+lc_E %>% 
+  #head()
+  group_by(Hour = floor_date(DateTime, unit = "1 hour"), ID) %>% 
+  summarise(Wh = sum(ele_Wh)) %>% 
+  #head()
+  filter(ID == "Unit_69") %>% 
+  filter(Hour > as.POSIXct("2017-6-1") & Hour < as.POSIXct("2017-10-7")) -> temp
+  #plot(ele_power)
+  #head()
+  ggplot()+
+    geom_line(aes(x=Hour, y = log(Wh)))
+  
+
+temp <- ungroup(temp)
+  
+temp %>% 
+  ungroup() %>% 
+  dplyr::select(-ID) %>% 
+  #head()
+  cycle()
+  
+class(temp)
+class(AirPassengers)
+acf(AirPassengers)
+
+acf(diff(log(temp$Wh))) # value of q is 0
+
+pacf(diff(log(temp$Wh))) # value of p is 0
+
+fit(arima(log(temp$Wh) , c(0,0,1), seasonal = list ))
+
+```
+
+```{r}
+AirPassengers %>% 
+  as.data.frame() %>% 
+  head()
+  dplot()
+
+
+
+```
+
+
+
+
 
 
 
